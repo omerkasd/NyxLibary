@@ -9,7 +9,7 @@
 
 local NyxUI    = {}
 NyxUI.__index  = NyxUI
-NyxUI.Flags    = {}   -- global flag deposu
+NyxUI.Flags    = {}
 NyxUI.Version  = "0.2"
 
 -- ============================================================
@@ -43,9 +43,13 @@ end
 local ok, res = pcall(detectExecutor)
 Executor = ok and res or "Unknown"
 
--- writefile/readfile destegi
+-- writefile/readfile/delfile destegi
 local function canSaveFiles()
     return (writefile ~= nil and readfile ~= nil)
+end
+
+local function canDeleteFiles()
+    return (delfile ~= nil)
 end
 
 -- ============================================================
@@ -87,11 +91,11 @@ local function isMobile()
     return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 end
 
--- JSON encode/decode (basit, nested desteklemez; HttpService kullan)
 local function jsonEncode(t)
     local ok3, res3 = pcall(HttpService.JSONEncode, HttpService, t)
     return ok3 and res3 or nil
 end
+
 local function jsonDecode(s)
     local ok3, res3 = pcall(HttpService.JSONDecode, HttpService, s)
     return ok3 and res3 or nil
@@ -277,8 +281,8 @@ local ThemeNames = {}
 for k in pairs(Themes) do table.insert(ThemeNames, k) end
 table.sort(ThemeNames)
 
-local ActiveTheme = Themes.Nyx
-local ThemeCallbacks = {}  -- tema degisince rebuild icin
+local ActiveTheme    = Themes.Nyx
+local ThemeCallbacks = {}
 
 -- ============================================================
 -- CONFIG SİSTEMİ
@@ -318,7 +322,6 @@ local function saveConfig(slotName)
     ensureFolder()
     local data = {}
     for flag, val in pairs(NyxUI.Flags) do
-        -- Color3 serialize
         if typeof(val) == "Color3" then
             data[flag] = { __type="Color3", r=val.R, g=val.G, b=val.B }
         else
@@ -344,7 +347,6 @@ local function loadConfig(slotName)
             NyxUI.Flags[flag] = val
         end
     end
-    -- flag callback'lerini tetikle
     if NyxUI._flagCallbacks then
         for flag, cb in pairs(NyxUI._flagCallbacks) do
             if NyxUI.Flags[flag] ~= nil then
@@ -356,9 +358,10 @@ local function loadConfig(slotName)
 end
 
 local function deleteConfig(slotName)
-    if not canSaveFiles() then return false end
-    local ok2 = pcall(delfile, configPath(slotName))
-    return ok2
+    -- FIX: delfile varligini ayri kontrol et
+    if not canDeleteFiles() then return false, "Executor dosya silmeyi desteklemiyor" end
+    local ok2, err = pcall(delfile, configPath(slotName))
+    return ok2, err
 end
 
 NyxUI._flagCallbacks = {}
@@ -379,7 +382,6 @@ end
 local function setupGui()
     local guiName = randomGuiName()
     local gui
-    -- CoreGui'ye koymayı dene (daha iyi anti-detect)
     local ok2 = pcall(function()
         gui = make("ScreenGui", {
             Name           = guiName,
@@ -389,7 +391,6 @@ local function setupGui()
         }, CoreGui)
     end)
     if not ok2 or not gui then
-        -- fallback: PlayerGui
         local existing = LP.PlayerGui:FindFirstChild(guiName)
         if existing then existing:Destroy() end
         gui = make("ScreenGui", {
@@ -437,7 +438,8 @@ end
 -- ============================================================
 -- RESIZE
 -- ============================================================
-local function makeResizable(handle, target, minW, minH, onResize)
+local function makeResizable(handle, target, minW, minH)
+    -- FIX: gereksiz onResize callback kaldirildi
     local resizing, startMouse, startSize = false, nil, nil
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -458,7 +460,6 @@ local function makeResizable(handle, target, minW, minH, onResize)
             local nw = math.max(minW, startSize.X + delta.X)
             local nh = math.max(minH, startSize.Y + delta.Y)
             target.Size = UDim2.new(0, nw, 0, nh)
-            if onResize then onResize(nw, nh) end
         end
     end)
 end
@@ -496,19 +497,17 @@ end
 -- ANA WINDOW
 -- ============================================================
 function NyxUI:Window(config)
-    -- config = { title, subtitle, key, theme, toggleKey }
     config = config or {}
-    local title      = config.title    or "NyxUI"
-    local subtitle   = config.subtitle or NyxUI.Version
-    local keyNeeded  = config.key      -- nil ise key system yok
-    local themeName  = config.theme    or "Nyx"
+    local title      = config.title     or "NyxUI"
+    local subtitle   = config.subtitle  or NyxUI.Version
+    local keyNeeded  = config.key
+    local themeName  = config.theme     or "Nyx"
     local toggleKey  = config.toggleKey or Enum.KeyCode.RightControl
 
-    -- Tema uygula
     if Themes[themeName] then
         ActiveTheme = Themes[themeName]
     end
-    local T = ActiveTheme  -- kisa alias
+    local T = ActiveTheme
 
     local gui     = setupGui()
     local visible = true
@@ -565,7 +564,6 @@ function NyxUI:Window(config)
         }, keyFrame)
         make("UICorner",{CornerRadius=UDim.new(0,6)}, keyBtn)
 
-        -- Key doğrulama: string veya fonksiyon destekler
         keyBtn.MouseButton1Click:Connect(function()
             local entered = keyInput.Text
             local valid   = false
@@ -590,7 +588,6 @@ function NyxUI:Window(config)
             end
         end)
 
-        -- Key girilene kadar bekle
         repeat task.wait(0.1) until keyValid
     end
 
@@ -608,8 +605,7 @@ function NyxUI:Window(config)
     make("UICorner", {CornerRadius=UDim.new(0,10)}, win)
     make("UIStroke",  {Color=T.Border, Thickness=1}, win)
 
-    -- Giriş animasyonu
-    win.Size             = UDim2.new(0,580,0,0)
+    win.Size                   = UDim2.new(0,580,0,0)
     win.BackgroundTransparency = 1
     tween(win, {Size=UDim2.new(0,580,0,420), BackgroundTransparency=0}, 0.4, Enum.EasingStyle.Back)
 
@@ -625,7 +621,6 @@ function NyxUI:Window(config)
     }, win)
     make("UIStroke", {Color=T.Border, Thickness=1, ApplyStrokeMode=Enum.ApplyStrokeMode.Border}, titlebar)
 
-    -- Logo
     local logo = make("Frame", {
         Size=UDim2.new(0,24,0,24), Position=UDim2.new(0,12,0.5,-12),
         BackgroundColor3=T.Accent, BorderSizePixel=0,
@@ -644,22 +639,23 @@ function NyxUI:Window(config)
         TextXAlignment=Enum.TextXAlignment.Left,
     }, titlebar)
     make("TextLabel", {
-        Size=UDim2.new(0,80,1,0), Position=UDim2.new(0,44+200,0,0),
+        Size=UDim2.new(0,80,1,0), Position=UDim2.new(0,244,0,0),
         BackgroundTransparency=1, Text=subtitle,
         TextColor3=T.TextDim, Font=Enum.Font.Code, TextSize=11,
         TextXAlignment=Enum.TextXAlignment.Left,
     }, titlebar)
 
-    -- Executor badge
-    make("TextLabel", {
+    -- FIX: Executor badge düzgün oluşturuluyor
+    local execBadge = make("TextLabel", {
         Size=UDim2.new(0,120,0,18), Position=UDim2.new(0.5,-60,0.5,-9),
         BackgroundColor3=T.BG3, BorderSizePixel=0,
         Text=Executor, TextColor3=T.TextDim,
         Font=Enum.Font.Code, TextSize=10,
         TextXAlignment=Enum.TextXAlignment.Center,
-    }, titlebar):Parent and make("UICorner",{CornerRadius=UDim.new(0,4)}, titlebar:FindFirstChildWhichIsA("TextLabel", true))
+    }, titlebar)
+    make("UICorner", {CornerRadius=UDim.new(0,4)}, execBadge)
 
-    -- Pencere butonları
+    -- Pencere butonlari
     local ctrlFrame = make("Frame", {
         Size=UDim2.new(0,62,0,26), Position=UDim2.new(1,-72,0.5,-13),
         BackgroundTransparency=1,
@@ -682,16 +678,16 @@ function NyxUI:Window(config)
             AutoButtonColor=false,
         }, ctrlFrame)
         make("UICorner", {CornerRadius=UDim.new(0,6)}, btn)
-        btn.MouseEnter:Connect(function() tween(btn,{BackgroundTransparency=0.25},0.1) end)
-        btn.MouseLeave:Connect(function() tween(btn,{BackgroundTransparency=0},0.1) end)
+        btn.MouseEnter:Connect(function()    tween(btn,{BackgroundTransparency=0.25},0.1) end)
+        btn.MouseLeave:Connect(function()    tween(btn,{BackgroundTransparency=0},0.1) end)
         btn.MouseButton1Down:Connect(function() tween(btn,{Size=UDim2.new(0,22,0,22)},0.07,Enum.EasingStyle.Quad) end)
-        btn.MouseButton1Up:Connect(function() tween(btn,{Size=UDim2.new(0,26,0,26)},0.12,Enum.EasingStyle.Back) end)
+        btn.MouseButton1Up:Connect(function()   tween(btn,{Size=UDim2.new(0,26,0,26)},0.12,Enum.EasingStyle.Back) end)
         return btn
     end
 
     local minimized = false
-    local miniBtn  = makeWinBtn("−", T.Warning)
-    local closeBtn = makeWinBtn("✕", T.Error)
+    local miniBtn   = makeWinBtn("−", T.Warning)
+    local closeBtn  = makeWinBtn("✕", T.Error)
 
     miniBtn.MouseButton1Click:Connect(function()
         minimized = not minimized
@@ -739,7 +735,6 @@ function NyxUI:Window(config)
         ClipsDescendants=true,
     }, win)
 
-    -- Sidebar
     local sidebar = make("Frame", {
         Name=            "Sidebar",
         Size=            UDim2.new(0,114,1,0),
@@ -754,7 +749,6 @@ function NyxUI:Window(config)
     }, sidebar)
     make("UIPadding", {PaddingLeft=UDim.new(0,8),PaddingRight=UDim.new(0,8),PaddingTop=UDim.new(0,10)}, sidebar)
 
-    -- İçerik alanı
     local contentArea = make("Frame", {
         Name=            "ContentArea",
         Size=            UDim2.new(1,-114,1,0),
@@ -764,7 +758,6 @@ function NyxUI:Window(config)
         ClipsDescendants=true,
     }, body)
 
-    -- Resize
     local resizeBtn = make("TextButton", {
         Name="ResizeBtn",
         Size=UDim2.new(0,18,0,18),
@@ -777,9 +770,8 @@ function NyxUI:Window(config)
     }, win)
     resizeBtn.MouseEnter:Connect(function() tween(resizeBtn,{TextTransparency=0},0.15) end)
     resizeBtn.MouseLeave:Connect(function() tween(resizeBtn,{TextTransparency=0.6},0.15) end)
-    makeResizable(resizeBtn, win, 400, 280, function(nw, nh)
-        body.Size = UDim2.new(1,0,1,-82)
-    end)
+    -- FIX: gereksiz callback kaldirildi
+    makeResizable(resizeBtn, win, 400, 280)
 
     -- ============================================================
     -- BİLDİRİM CONTAINER
@@ -791,7 +783,7 @@ function NyxUI:Window(config)
         BackgroundTransparency=1,
         ZIndex=200,
     }, gui)
-    local notifLayout = make("UIListLayout", {
+    make("UIListLayout", {
         FillDirection=Enum.FillDirection.Vertical,
         Padding=UDim.new(0,8),
         VerticalAlignment=Enum.VerticalAlignment.Bottom,
@@ -808,10 +800,9 @@ function NyxUI:Window(config)
     local function switchTab(tabObj)
         if activeTab == tabObj then return end
         if activeTab then
-            tween(activeTab.content,    {Position=UDim2.new(-1,0,0,0)}, 0.2, Enum.EasingStyle.Quart)
-            tween(activeTab.btn,        {TextColor3=T.TextDim},          0.15)
-            tween(activeTab.indicator,  {BackgroundTransparency=1},      0.15)
-            tween(activeTab.searchBar,  {Size=UDim2.new(0,0,0,26)},      0.2)
+            tween(activeTab.content,   {Position=UDim2.new(-1,0,0,0)}, 0.2, Enum.EasingStyle.Quart)
+            tween(activeTab.btn,       {TextColor3=T.TextDim},          0.15)
+            tween(activeTab.indicator, {BackgroundTransparency=1},      0.15)
         end
         activeTab = tabObj
         tabObj.content.Position = UDim2.new(1,0,0,0)
@@ -851,7 +842,6 @@ function NyxUI:Window(config)
         make("UICorner",   {CornerRadius=UDim.new(0,2)}, indicator)
         make("UIGradient", {Color=ColorSequence.new(T.Accent,T.AccentLight),Rotation=90}, indicator)
 
-        -- İçerik
         local contentWrap = make("Frame", {
             Size=UDim2.new(1,0,1,0),
             Position=UDim2.new(1,0,0,0),
@@ -860,30 +850,56 @@ function NyxUI:Window(config)
             ClipsDescendants=true,
         }, contentArea)
 
-        -- Arama kutusu
+        -- FIX: Arama kutusu + toggle butonu düzgün implement edildi
+        local searchOpen = false
+
+        local searchToggleBtn = make("TextButton", {
+            Size=UDim2.new(0,26,0,26),
+            Position=UDim2.new(1,-32,0,6),
+            BackgroundColor3=T.BG3,
+            BorderSizePixel=0,
+            Text="🔍",
+            TextColor3=T.TextDim,
+            Font=Enum.Font.GothamBold,
+            TextSize=11,
+            AutoButtonColor=false,
+            ZIndex=3,
+        }, contentWrap)
+        make("UICorner", {CornerRadius=UDim.new(0,6)}, searchToggleBtn)
+        make("UIStroke", {Color=T.Border2, Thickness=1}, searchToggleBtn)
+
         local searchBar = make("TextBox", {
-            Size=UDim2.new(0,0,0,26),
-            Position=UDim2.new(0,10,0,8),
+            Size=UDim2.new(1,-44,0,26),
+            Position=UDim2.new(0,10,0,6),
             BackgroundColor3=T.BG3,
             BorderSizePixel=0,
             Text="",
-            PlaceholderText="🔍  Ara...",
+            PlaceholderText="Ara...",
             PlaceholderColor3=T.TextDim,
             TextColor3=T.Text,
             Font=Enum.Font.Gotham,
             TextSize=11,
             ClearTextOnFocus=false,
             Visible=false,
+            ZIndex=3,
         }, contentWrap)
         make("UICorner",  {CornerRadius=UDim.new(0,6)}, searchBar)
         make("UIStroke",  {Color=T.Border2, Thickness=1}, searchBar)
         make("UIPadding", {PaddingLeft=UDim.new(0,8)}, searchBar)
 
-        -- Arama toggle butonu (tab'ın yanında)
-        -- Scroll content
+        searchToggleBtn.MouseButton1Click:Connect(function()
+            searchOpen = not searchOpen
+            searchBar.Visible = searchOpen
+            if not searchOpen then
+                searchBar.Text = ""
+            end
+            tween(searchToggleBtn, {BackgroundColor3 = searchOpen and T.Accent or T.BG3}, 0.15)
+            tween(searchToggleBtn, {TextColor3 = searchOpen and T.White or T.TextDim}, 0.15)
+        end)
+
         local content = make("ScrollingFrame", {
-            Size=UDim2.new(1,0,1,-0,0),
-            Position=UDim2.new(0,0,0,0),
+            Size=UDim2.new(1,0,1,-38),
+            Position=UDim2.new(0,0,0,38),
             BackgroundTransparency=1,
             BorderSizePixel=0,
             ScrollBarThickness=3,
@@ -902,8 +918,6 @@ function NyxUI:Window(config)
             PaddingTop=UDim.new(0,10),  PaddingBottom=UDim.new(0,10),
         }, content)
 
-        -- Arama işlevi
-        local searchOpen = false
         searchBar:GetPropertyChangedSignal("Text"):Connect(function()
             local query = searchBar.Text:lower()
             for _, child in ipairs(content:GetChildren()) do
@@ -965,10 +979,10 @@ function NyxUI:Window(config)
             -- ================================================
             function itemObj:Toggle(opts)
                 opts = type(opts)=="table" and opts or {label=opts, flag=opts}
-                local label   = opts.label   or "Toggle"
-                local flag    = opts.flag    or label
-                local default = opts.default or false
-                local callback= opts.callback
+                local label    = opts.label    or "Toggle"
+                local flag     = opts.flag     or label
+                local default  = opts.default  or false
+                local callback = opts.callback
 
                 registerFlag(flag, default, callback)
                 local state = NyxUI.Flags[flag]
@@ -981,7 +995,7 @@ function NyxUI:Window(config)
                 make("UICorner", {CornerRadius=UDim.new(0,7)}, row)
                 make("UIStroke", {Color=T.Border2, Thickness=1}, row)
 
-                local lbl = make("TextLabel", {
+                make("TextLabel", {
                     Size=UDim2.new(1,-54,1,0), Position=UDim2.new(0,12,0,0),
                     BackgroundTransparency=1, Text=label,
                     TextColor3=T.Text, Font=Enum.Font.GothamSemibold, TextSize=12,
@@ -1215,6 +1229,14 @@ function NyxUI:Window(config)
                 make("UIListLayout",{Padding=UDim.new(0,2)}, dropdown)
                 make("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingRight=UDim.new(0,6),PaddingTop=UDim.new(0,6),PaddingBottom=UDim.new(0,6)}, dropdown)
 
+                local function closeDropdown()
+                    open = false
+                    tween(dropdown,{Size=UDim2.new(1,0,0,0)},0.18,Enum.EasingStyle.Quart)
+                    tween(arrow,{Rotation=0},0.18)
+                    task.delay(0.2,function() dropdown.Visible=false end)
+                    container.Size=UDim2.new(1,0,0,36)
+                end
+
                 for _, opt in ipairs(options) do
                     local optBtn = make("TextButton", {
                         Size=UDim2.new(1,0,0,itemH),
@@ -1229,26 +1251,19 @@ function NyxUI:Window(config)
                     optBtn.MouseButton1Click:Connect(function()
                         selected=opt; NyxUI.Flags[flag]=opt; valLbl.Text=tostring(opt)
                         if callback then pcall(callback, opt) end
-                        open=false
-                        tween(dropdown,{Size=UDim2.new(1,0,0,0)},0.18,Enum.EasingStyle.Quart)
-                        tween(arrow,{Rotation=0},0.18)
-                        task.delay(0.2,function() dropdown.Visible=false end)
-                        container.Size=UDim2.new(1,0,0,36)
+                        closeDropdown()
                     end)
                 end
 
                 row.MouseButton1Click:Connect(function()
-                    open=not open
+                    open = not open
                     if open then
                         dropdown.Visible=true; dropdown.Size=UDim2.new(1,0,0,0)
                         tween(dropdown,{Size=UDim2.new(1,0,0,fullH)},0.22,Enum.EasingStyle.Back)
                         tween(arrow,{Rotation=180},0.18)
                         container.Size=UDim2.new(1,0,0,36+fullH+4)
                     else
-                        tween(dropdown,{Size=UDim2.new(1,0,0,0)},0.18,Enum.EasingStyle.Quart)
-                        tween(arrow,{Rotation=0},0.18)
-                        task.delay(0.2,function() dropdown.Visible=false end)
-                        container.Size=UDim2.new(1,0,0,36)
+                        closeDropdown()
                     end
                 end)
                 row.MouseEnter:Connect(function() tween(row,{BackgroundColor3=Color3.fromRGB(15,15,26)},0.12) end)
@@ -1256,7 +1271,9 @@ function NyxUI:Window(config)
 
                 local ctrl={}
                 function ctrl:Get() return selected end
-                function ctrl:Set(v) selected=v; NyxUI.Flags[flag]=v; valLbl.Text=tostring(v) end
+                function ctrl:Set(v)
+                    selected=v; NyxUI.Flags[flag]=v; valLbl.Text=tostring(v)
+                end
                 NyxUI._flagCallbacks[flag]=function(v) ctrl:Set(v) end
                 return ctrl
             end
@@ -1274,8 +1291,12 @@ function NyxUI:Window(config)
                 registerFlag(flag, default, callback)
                 local color = NyxUI.Flags[flag]
                 local h0,s0,v0 = rgbToHsv(color.R, color.G, color.B)
-                local hue,sat,val2 = h0,s0,v0
+                local hue, sat, val2 = h0, s0, v0
                 local open = false
+
+                -- FIX: draggingHue ve draggingSV ayni scope'ta tanimlandi
+                local draggingSV  = false
+                local draggingHue = false
 
                 local row = make("TextButton", {
                     Size=UDim2.new(1,0,0,36),
@@ -1299,7 +1320,6 @@ function NyxUI:Window(config)
                 make("UICorner",{CornerRadius=UDim.new(0,5)}, swatch)
                 make("UIStroke",{Color=T.Border,Thickness=1}, swatch)
 
-                -- Picker panel
                 local picker = make("Frame", {
                     Size=UDim2.new(1,0,0,0),
                     Position=UDim2.new(0,0,1,4),
@@ -1312,18 +1332,16 @@ function NyxUI:Window(config)
 
                 local pickerH = 160
 
-                -- SV Square
                 local svBox = make("ImageLabel", {
                     Size=UDim2.new(1,-28,0,110),
                     Position=UDim2.new(0,10,0,10),
                     BackgroundColor3=Color3.fromHSV(hue,1,1),
                     BorderSizePixel=0, ZIndex=16,
-                    Image="rbxassetid://4155801252", -- white->transparent gradient
+                    Image="rbxassetid://4155801252",
                     ScaleType=Enum.ScaleType.Stretch,
                 }, picker)
                 make("UICorner",{CornerRadius=UDim.new(0,5)}, svBox)
 
-                -- Siyah gradient üstüne
                 local svDark = make("Frame", {
                     Size=UDim2.new(1,0,1,0),
                     BackgroundColor3=Color3.new(0,0,0),
@@ -1339,7 +1357,6 @@ function NyxUI:Window(config)
                     NumberSequenceKeypoint.new(1, 0),
                 }), Rotation=90}, svDark)
 
-                -- SV cursor
                 local svCursor = make("Frame", {
                     Size=UDim2.new(0,10,0,10),
                     Position=UDim2.new(sat,-5,1-val2,-5),
@@ -1349,7 +1366,6 @@ function NyxUI:Window(config)
                 make("UICorner",{CornerRadius=UDim.new(1,0)}, svCursor)
                 make("UIStroke",{Color=Color3.new(0,0,0),Thickness=1.5}, svCursor)
 
-                -- Hue slider
                 local hueBar = make("Frame", {
                     Size=UDim2.new(0,14,0,110),
                     Position=UDim2.new(1,-22,0,10),
@@ -1357,9 +1373,7 @@ function NyxUI:Window(config)
                     BorderSizePixel=0, ZIndex=16,
                 }, picker)
                 make("UICorner",{CornerRadius=UDim.new(0,4)}, hueBar)
-
-                -- Hue gradient
-                local hueGrad = make("UIGradient", {
+                make("UIGradient", {
                     Color=ColorSequence.new({
                         ColorSequenceKeypoint.new(0,    Color3.fromHSV(0,1,1)),
                         ColorSequenceKeypoint.new(0.17, Color3.fromHSV(0.17,1,1)),
@@ -1381,10 +1395,10 @@ function NyxUI:Window(config)
                 make("UICorner",{CornerRadius=UDim.new(0,2)}, hueCursor)
                 make("UIStroke",{Color=Color3.new(0,0,0),Thickness=1.5}, hueCursor)
 
-                -- Hex input
                 local function colorToHex(c)
                     return string.format("#%02X%02X%02X", math.floor(c.R*255), math.floor(c.G*255), math.floor(c.B*255))
                 end
+
                 local hexInput = make("TextBox", {
                     Size=UDim2.new(1,-20,0,24),
                     Position=UDim2.new(0,10,1,-32),
@@ -1407,8 +1421,7 @@ function NyxUI:Window(config)
                     if callback then pcall(callback, color) end
                 end
 
-                -- SV drag
-                local draggingSV = false
+                -- FIX: draggingSV ve draggingHue onceden tanimlandi, artik forward reference hatasi yok
                 svBox.InputBegan:Connect(function(inp)
                     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
                         draggingSV=true
@@ -1419,27 +1432,7 @@ function NyxUI:Window(config)
                         updateColor()
                     end
                 end)
-                UserInputService.InputChanged:Connect(function(inp)
-                    if draggingSV and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
-                        local rel = svBox.AbsoluteSize
-                        sat  = math.clamp((inp.Position.X-svBox.AbsolutePosition.X)/rel.X,0,1)
-                        val2 = 1-math.clamp((inp.Position.Y-svBox.AbsolutePosition.Y)/rel.Y,0,1)
-                        svCursor.Position=UDim2.new(sat,-5,1-val2,-5)
-                        updateColor()
-                    end
-                    if draggingHue and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then
-                        hue=math.clamp((inp.Position.Y-hueBar.AbsolutePosition.Y)/hueBar.AbsoluteSize.Y,0,1)
-                        hueCursor.Position=UDim2.new(0,-2,hue,-2)
-                        updateColor()
-                    end
-                end)
-                UserInputService.InputEnded:Connect(function(inp)
-                    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-                        draggingSV=false; draggingHue=false
-                    end
-                end)
 
-                local draggingHue = false
                 hueBar.InputBegan:Connect(function(inp)
                     if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
                         draggingHue=true
@@ -1449,7 +1442,30 @@ function NyxUI:Window(config)
                     end
                 end)
 
-                -- Hex input
+                UserInputService.InputChanged:Connect(function(inp)
+                    if inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch then
+                        if draggingSV then
+                            local rel = svBox.AbsoluteSize
+                            sat  = math.clamp((inp.Position.X-svBox.AbsolutePosition.X)/rel.X,0,1)
+                            val2 = 1-math.clamp((inp.Position.Y-svBox.AbsolutePosition.Y)/rel.Y,0,1)
+                            svCursor.Position=UDim2.new(sat,-5,1-val2,-5)
+                            updateColor()
+                        end
+                        if draggingHue then
+                            hue=math.clamp((inp.Position.Y-hueBar.AbsolutePosition.Y)/hueBar.AbsoluteSize.Y,0,1)
+                            hueCursor.Position=UDim2.new(0,-2,hue,-2)
+                            updateColor()
+                        end
+                    end
+                end)
+
+                UserInputService.InputEnded:Connect(function(inp)
+                    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
+                        draggingSV=false
+                        draggingHue=false
+                    end
+                end)
+
                 hexInput.FocusLost:Connect(function()
                     local hex = hexInput.Text:gsub("#","")
                     if #hex==6 then
@@ -1467,7 +1483,6 @@ function NyxUI:Window(config)
                     end
                 end)
 
-                -- Aç/kapat
                 row.MouseButton1Click:Connect(function()
                     open=not open
                     if open then
@@ -1595,7 +1610,9 @@ function NyxUI:Window(config)
                     ClearTextOnFocus=false, BorderSizePixel=0,
                 }, row)
 
-                input.Focused:Connect(function()    tween(row,{BackgroundColor3=Color3.fromRGB(15,15,26)},0.15) end)
+                input.Focused:Connect(function()
+                    tween(row,{BackgroundColor3=Color3.fromRGB(15,15,26)},0.15)
+                end)
                 input.FocusLost:Connect(function()
                     tween(row,{BackgroundColor3=T.BG3},0.15)
                     NyxUI.Flags[flag]=input.Text
@@ -1697,116 +1714,6 @@ function NyxUI:Window(config)
     end
 
     -- ============================================================
-    -- SETTINGS TAB (otomatik eklenir)
-    -- ============================================================
-    local settingsTab = winObj:Tab("⚙ Settings")
-    local settingsSec = settingsTab:Section("Genel")
-
-    -- Toggle tuşu
-    local currentToggleKey = toggleKey
-    settingsSec:Keybind({
-        label    = "GUI Aç/Kapat Tuşu",
-        flag     = "_nyxToggleKey",
-        default  = currentToggleKey,
-        callback = function(k) currentToggleKey = k end,
-    })
-
-    -- Tema seçici
-    settingsSec:Dropdown({
-        label    = "Tema",
-        flag     = "_nyxTheme",
-        options  = ThemeNames,
-        default  = themeName,
-        callback = function(name)
-            if Themes[name] then
-                ActiveTheme = Themes[name]
-                -- Tema değişimini bildir (tam rebuild olmadan renk güncelleme zor,
-                -- bu yüzden notify + rejoin öneri)
-                winObj:Notify("Tema", name.." uygulandı. Scripti yeniden çalıştır.", 4, "info")
-            end
-        end,
-    })
-
-    -- Rejoin
-    local rejoinSec = settingsTab:Section("Oyun")
-    rejoinSec:Button({
-        label    = "Rejoin",
-        callback = function()
-            local placeId  = game.PlaceId
-            local serverId = game.JobId
-            TeleportService:TeleportToPlaceInstance(placeId, serverId, LP)
-        end,
-    })
-
-    -- Config bölümü
-    local configSec = settingsTab:Section("Config")
-
-    local function buildConfigUI()
-        -- Slot listesi dropdown
-        local slots    = listConfigs()
-        local allSlots = {}
-        for i=1,MAX_SLOTS do
-            local name = "Slot "..i
-            -- Mevcut kayıtlı slotları da ekle
-            allSlots[i] = name
-        end
-        for _, s in ipairs(slots) do
-            local found = false
-            for _, a in ipairs(allSlots) do if a==s then found=true break end end
-            if not found then table.insert(allSlots, s) end
-        end
-
-        local selectedSlot = allSlots[1]
-        local slotDD = configSec:Dropdown({
-            label   = "Slot Seç",
-            flag    = "_nyxConfigSlot",
-            options = allSlots,
-            default = allSlots[1],
-            callback= function(v) selectedSlot=v end,
-        })
-
-        configSec:Button({label="💾 Kaydet", callback=function()
-            local ok2, err = saveConfig(selectedSlot)
-            winObj:Notify("Config", ok2 and (selectedSlot.." kaydedildi.") or ("Hata: "..(err or "")), 3, ok2 and "success" or "error")
-        end})
-
-        configSec:Button({label="📂 Yükle", callback=function()
-            local ok2, err = loadConfig(selectedSlot)
-            winObj:Notify("Config", ok2 and (selectedSlot.." yüklendi.") or ("Hata: "..(err or "")), 3, ok2 and "success" or "error")
-        end})
-
-        configSec:Button({label="🗑 Sil", callback=function()
-            local ok2 = deleteConfig(selectedSlot)
-            winObj:Notify("Config", ok2 and (selectedSlot.." silindi.") or "Silinemedi.", 3, ok2 and "info" or "error")
-        end})
-    end
-    buildConfigUI()
-
-    -- Executor bilgisi
-    local infoSec = settingsTab:Section("Sistem")
-    infoSec:Button({label="Executor: "..Executor, callback=function() end})
-    infoSec:Button({label="NyxUI v"..NyxUI.Version, callback=function() end})
-
-    -- ============================================================
-    -- TOGGLE TUŞU
-    -- ============================================================
-    UserInputService.InputBegan:Connect(function(inp, gp)
-        if gp then return end
-        if inp.UserInputType == Enum.UserInputType.Keyboard then
-            if inp.KeyCode == currentToggleKey then
-                visible = not visible
-                if visible then
-                    win.Visible = true
-                    tween(win, {BackgroundTransparency=0}, 0.2)
-                else
-                    tween(win, {BackgroundTransparency=1}, 0.18)
-                    task.delay(0.2, function() win.Visible=false end)
-                end
-            end
-        end
-    end)
-
-    -- ============================================================
     -- BİLDİRİM
     -- ============================================================
     function winObj:Notify(title, message, duration, notifType)
@@ -1831,7 +1738,6 @@ function NyxUI:Window(config)
         make("UICorner",{CornerRadius=UDim.new(0,8)}, notif)
         make("UIStroke",{Color=T2.Border,Thickness=1}, notif)
 
-        -- Sol bar
         local bar = make("Frame",{
             Size=UDim2.new(0,3,1,-14),
             Position=UDim2.new(0,7,0.5,0), AnchorPoint=Vector2.new(0,0.5),
@@ -1854,7 +1760,6 @@ function NyxUI:Window(config)
             TextWrapped=true, ZIndex=201,
         }, notif)
 
-        -- Progres bar
         local progBG = make("Frame",{
             Size=UDim2.new(1,-14,0,2), Position=UDim2.new(0,7,1,-4),
             BackgroundColor3=T2.Border, BorderSizePixel=0, ZIndex=201,
@@ -1867,7 +1772,6 @@ function NyxUI:Window(config)
         }, progBG)
         make("UICorner",{CornerRadius=UDim.new(1,0)}, prog)
 
-        -- Kapat butonu
         local xBtn = make("TextButton",{
             Size=UDim2.new(0,20,0,20), Position=UDim2.new(1,-24,0,6),
             BackgroundTransparency=1, Text="✕",
@@ -1879,7 +1783,6 @@ function NyxUI:Window(config)
             task.delay(0.25,function() notif:Destroy() end)
         end)
 
-        -- Giriş
         notif.Position = UDim2.new(1,10,0,0)
         tween(notif,{BackgroundTransparency=0, Position=UDim2.new(0,0,0,0)},0.3,Enum.EasingStyle.Back)
         tween(prog,{Size=UDim2.new(0,0,1,0)},duration,Enum.EasingStyle.Linear)
@@ -1887,6 +1790,108 @@ function NyxUI:Window(config)
         task.delay(duration,function()
             tween(notif,{BackgroundTransparency=1,Position=UDim2.new(1,10,0,0)},0.22,Enum.EasingStyle.Quart)
             task.delay(0.25,function() notif:Destroy() end)
+        end)
+    end
+
+    -- ============================================================
+    -- SETTINGS TAB (FIX: en sona eklendi, kullanici tablari oncelikli)
+    -- Bu fonksiyon, kullanici tum tablarini olusturduktan sonra
+    -- winObj:BuildSettings() ile manuel cagrilmalidir.
+    -- Ya da otomatik olarak tum tab'lardan sonra eklemek icin
+    -- asagidaki yaklasim kullanilabilir.
+    -- ============================================================
+    function winObj:BuildSettings()
+        local settingsTab = self:Tab("⚙ Settings")
+        local settingsSec = settingsTab:Section("Genel")
+
+        local currentToggleKey = toggleKey
+        settingsSec:Keybind({
+            label    = "GUI Aç/Kapat Tuşu",
+            flag     = "_nyxToggleKey",
+            default  = currentToggleKey,
+            callback = function(k) currentToggleKey = k end,
+        })
+
+        settingsSec:Dropdown({
+            label    = "Tema",
+            flag     = "_nyxTheme",
+            options  = ThemeNames,
+            default  = themeName,
+            callback = function(name)
+                if Themes[name] then
+                    ActiveTheme = Themes[name]
+                    winObj:Notify("Tema", name.." uygulandı. Scripti yeniden çalıştır.", 4, "info")
+                end
+            end,
+        })
+
+        local rejoinSec = settingsTab:Section("Oyun")
+        rejoinSec:Button({
+            label    = "Rejoin",
+            callback = function()
+                local placeId  = game.PlaceId
+                local serverId = game.JobId
+                TeleportService:TeleportToPlaceInstance(placeId, serverId, LP)
+            end,
+        })
+
+        local configSec = settingsTab:Section("Config")
+
+        local allSlots = {}
+        for i=1,MAX_SLOTS do
+            allSlots[i] = "Slot "..i
+        end
+        local savedSlots = listConfigs()
+        for _, s in ipairs(savedSlots) do
+            local found = false
+            for _, a in ipairs(allSlots) do if a==s then found=true break end end
+            if not found then table.insert(allSlots, s) end
+        end
+
+        local selectedSlot = allSlots[1]
+        configSec:Dropdown({
+            label   = "Slot Seç",
+            flag    = "_nyxConfigSlot",
+            options = allSlots,
+            default = allSlots[1],
+            callback= function(v) selectedSlot=v end,
+        })
+
+        configSec:Button({label="💾 Kaydet", callback=function()
+            local ok2, err = saveConfig(selectedSlot)
+            winObj:Notify("Config", ok2 and (selectedSlot.." kaydedildi.") or ("Hata: "..(err or "")), 3, ok2 and "success" or "error")
+        end})
+
+        configSec:Button({label="📂 Yükle", callback=function()
+            local ok2, err = loadConfig(selectedSlot)
+            winObj:Notify("Config", ok2 and (selectedSlot.." yüklendi.") or ("Hata: "..(err or "")), 3, ok2 and "success" or "error")
+        end})
+
+        configSec:Button({label="🗑 Sil", callback=function()
+            -- FIX: deleteConfig artik hata mesaji dondurüyor
+            local ok2, err = deleteConfig(selectedSlot)
+            winObj:Notify("Config", ok2 and (selectedSlot.." silindi.") or ("Hata: "..(err or "Desteklenmiyor")), 3, ok2 and "info" or "error")
+        end})
+
+        local infoSec = settingsTab:Section("Sistem")
+        infoSec:Button({label="Executor: "..Executor, callback=function() end})
+        infoSec:Button({label="NyxUI v"..NyxUI.Version, callback=function() end})
+
+        -- Toggle tusu (settings'teki keybind ile senkronize)
+        UserInputService.InputBegan:Connect(function(inp, gp)
+            if gp then return end
+            if inp.UserInputType == Enum.UserInputType.Keyboard then
+                if inp.KeyCode == currentToggleKey then
+                    visible = not visible
+                    if visible then
+                        win.Visible = true
+                        tween(win, {BackgroundTransparency=0}, 0.2)
+                    else
+                        tween(win, {BackgroundTransparency=1}, 0.18)
+                        task.delay(0.2, function() win.Visible=false end)
+                    end
+                end
+            end
         end)
     end
 
